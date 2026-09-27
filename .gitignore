@@ -4,6 +4,9 @@
 # .tfstate files
 *.tfstate
 *.tfstate.*
+terraform.tfstate
+terraform.tfstate.backup
+lambda_function.zip
 
 # Crash log files
 crash.log
