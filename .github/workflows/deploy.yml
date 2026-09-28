@@ -23,11 +23,25 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: pip install boto3
+
+      - name: Run Lambda unit tests
+        run: python -m unittest test_lambda_function.py
+
       - name: Terraform Init
         run: terraform init
 
       - name: Terraform Apply
         run: terraform apply -auto-approve
+
+      - name: Run API smoke test
+        run: python -m unittest test_api.py
 
       - name: Sync frontend to S3
         run: |
