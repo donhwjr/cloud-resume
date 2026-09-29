@@ -12,6 +12,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
+    }
   }
 }
 
@@ -90,7 +94,7 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
 }
 
-# Attach basic Lambda execution policy (CloudWatch logs)
+# Attach basic Lambda execution policy
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -106,17 +110,6 @@ resource "aws_dynamodb_table" "visitor_counter" {
     name = "id"
     type = "S"
   }
-}
-
-# DynamoDB initial item
-resource "aws_dynamodb_table_item" "visitor_count" {
-  table_name = aws_dynamodb_table.visitor_counter.name
-  hash_key   = aws_dynamodb_table.visitor_counter.hash_key
-
-  item = jsonencode({
-    id    = { S = "visitor-count" }
-    count = { N = "0" }
-  })
 }
 
 # Lambda function
@@ -161,7 +154,7 @@ resource "aws_apigatewayv2_route" "visitor_counter" {
   target    = "integrations/${aws_apigatewayv2_integration.visitor_counter.id}"
 }
 
-# API Gateway stage (auto-deploy)
+# API Gateway stage
 resource "aws_apigatewayv2_stage" "visitor_counter" {
   api_id      = aws_apigatewayv2_api.visitor_counter.id
   name        = "$default"
@@ -175,6 +168,68 @@ resource "aws_lambda_permission" "api_gateway" {
   function_name = aws_lambda_function.visitor_counter.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.visitor_counter.execution_arn}/*/*"
+}
+
+# CloudFront distribution
+resource "aws_cloudfront_distribution" "resume_site" {
+  enabled         = true
+  is_ipv6_enabled = true
+  http_version    = "http2"
+  price_class     = "PriceClass_All"
+
+  tags = {
+    Name = "don-williams-cloud-resume"
+  }
+
+  web_acl_id = "arn:aws:wafv2:us-east-1:482112969475:global/webacl/CreatedByCloudFront-f912fd33/c7609378-446c-4bae-a53f-fc6e581c1589"
+
+  origin {
+    domain_name = aws_s3_bucket_website_configuration.resume_site.website_endpoint
+    origin_id   = "terraform-s3-website"
+
+    connection_attempts = 3
+    connection_timeout  = 10
+
+    custom_origin_config {
+      http_port                = 80
+      https_port               = 443
+      origin_protocol_policy   = "http-only"
+      origin_ssl_protocols     = ["SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"]
+      origin_read_timeout      = 30
+      origin_keepalive_timeout = 5
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id = "terraform-s3-website"
+
+    allowed_methods = [
+      "GET",
+      "HEAD"
+    ]
+
+    cached_methods = [
+      "GET",
+      "HEAD"
+    ]
+
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+    smooth_streaming       = false
+
+    cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+    minimum_protocol_version       = "TLSv1"
+  }
 }
 
 # Output the API endpoint
